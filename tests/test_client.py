@@ -238,7 +238,7 @@ class TestPlayMedia(unittest.IsolatedAsyncioTestCase):
             side_effect=[
                 {"loop_loop": []},  # Spotty
                 {"loop_loop": [{"name": "Search", "type": "search", "id": "9"}]},
-                {"loop_loop": [{"name": "Songs", "type": "link", "id": "9.4"}]},
+                {"loop_loop": [{"name": "Skladby", "type": "link", "id": "9.4"}]},
                 {
                     "loop_loop": [
                         {
@@ -328,7 +328,7 @@ class TestSearchMedia(unittest.IsolatedAsyncioTestCase):
             side_effect=[
                 {"loop_loop": []},  # Spotty
                 {"loop_loop": [{"name": "Search", "type": "search", "id": "9"}]},
-                {"loop_loop": [{"name": "Songs", "type": "link", "id": "9.4"}]},
+                {"loop_loop": [{"name": "Skladby", "type": "link", "id": "9.4"}]},
                 {
                     "loop_loop": [
                         {
@@ -365,7 +365,7 @@ class TestSearchMedia(unittest.IsolatedAsyncioTestCase):
                 {
                     "loop_loop": [
                         tidal_track,
-                        {"name": "Songs", "type": "link", "id": "9.4"},
+                        {"name": "Skladby", "type": "link", "id": "9.4"},
                     ]
                 },
                 {"loop_loop": [tidal_track]},

@@ -406,7 +406,7 @@ class LMSClient:
         search: Optional[str] = None,
         limit: int = 20,
     ) -> Dict[str, Any]:
-        params: List[str] = ["items", "0", str(limit)]
+        params: List[str] = ["items", "0", str(limit), "want_url:1"]
         if item_id:
             params.append(f"item_id:{item_id}")
         if search:
@@ -443,7 +443,7 @@ class LMSClient:
         fallback = []
         for item in items:
             name = str(item.get("name") or item.get("title") or "").strip().lower()
-            if name in {"songs", "song", "tracks", "track"}:
+            if name in {"songs", "song", "tracks", "track", "skladby"}:
                 preferred.append(item)
             elif name == "everything":
                 fallback.append(item)
