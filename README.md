@@ -47,6 +47,29 @@ docker run -d -p 8000:8000 -e LMS_HOST=your-lms-host lyrion-mcp
 The server runs on `http://localhost:8000` using the `streamable-http`
 transport. Point your MCP client at that URL.
 
+### Docker Compose
+
+```yaml
+services:
+  lyrion-mcp:
+    image: ghcr.io/vysmaty/lyrion-mcp:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      LMS_HOST: your-lms-host
+      LMS_PORT: "9000"
+      LMS_HTTPS: "0"
+      # LMS_USERNAME: your-username
+      # LMS_PASSWORD: your-password
+```
+
+For a local checkout, replace the `image` line with:
+
+```yaml
+    build: .
+```
+
 ### GitHub Container Registry
 
 Publishing a GitHub release builds and pushes a multi-architecture image to
