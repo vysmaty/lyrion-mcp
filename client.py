@@ -3,7 +3,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 import aiohttp
-from pysqueezebox import Server, Player
+from pysqueezebox import Server, Player  # type: ignore[import-untyped]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,6 +20,34 @@ def _normalize_spotify_url(url: Optional[str]) -> Optional[str]:
     if m:
         return f"spotify://{m.group(1)}:{m.group(2)}"
     return url
+
+
+def _normalize_tidal_url(url: Optional[str]) -> Optional[str]:
+    """
+    Convert Spotify-style tidal://track:<id> links to the native track URI
+    shape accepted by the LMS TIDAL plugin. TIDAL web URLs are left intact:
+    the plugin registers a handler for tidal.com track/album/playlist links.
+    """
+    if not url:
+        return url
+    m = re.match(r"tidal://track:([0-9]+)(?:[.?].*)?$", url)
+    if m:
+        return f"tidal://{m.group(1)}"
+    return url
+
+
+def _normalize_media_url(url: Optional[str]) -> Optional[str]:
+    """Normalize known streaming-service share URLs to LMS-native forms."""
+    return _normalize_tidal_url(_normalize_spotify_url(url))
+
+
+def _is_tidal_url(url: Optional[str]) -> bool:
+    if not url:
+        return False
+    return bool(
+        re.match(r"^(?:tidal|wimp)://", url)
+        or re.match(r"^https?://(?:\w+\.)?tidal\.com/", url)
+    )
 
 
 class LMSClient:
@@ -172,7 +200,7 @@ class LMSClient:
                 await target_player.async_set_power(True)
 
             if url:
-                return bool(await target_player.async_load_url(_normalize_spotify_url(url)))
+                return bool(await target_player.async_load_url(_normalize_media_url(url)))
             if track_id is not None:
                 # LMS plays a library track by id via the playlistcontrol command.
                 # Use async_query (not async_command) because playlistcontrol returns
@@ -262,11 +290,11 @@ class LMSClient:
 
     async def search_media(self, search_query: str) -> List[Dict[str, Any]]:
         """
-        Search both the local LMS library and the Spotty (Spotify) app for
+        Search the local LMS library plus supported online music apps for
         playable tracks matching ``search_query``.
 
         Returns a list of dicts with keys: title, url, source ('library' or
-        'spotify'). Local library results are listed first.
+        'spotify' or 'tidal'). Local library results are listed first.
         """
         await self.ensure_connected()
         results: List[Dict[str, Any]] = []
@@ -309,12 +337,163 @@ class LMSClient:
                         }
                     )
 
+            results.extend(await self._search_tidal_media(search_query, player_id))
+
+        return self._dedupe_media_results(results)
+
+    async def _search_tidal_media(
+        self, search_query: str, player_id: str, limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """
+        Search the LMS TIDAL app menu for playable tracks.
+
+        The TIDAL plugin is OPML/XMLBrowser based, so item IDs are menu-state
+        IDs rather than a stable API. Discover the Search menu dynamically and
+        then browse the Songs/Tracks category that LMS returns for the query.
+        """
+        results: List[Dict[str, Any]] = []
+
+        try:
+            root = await self._tidal_items(player_id, limit=50)
+            search_item = self._find_menu_item(
+                self._rpc_items(root), names={"search"}, types={"search"}
+            )
+            if not search_item:
+                return results
+
+            search_id = search_item.get("id")
+            if not search_id:
+                return results
+
+            search_menu = await self._tidal_items(
+                player_id, item_id=str(search_id), search=search_query, limit=50
+            )
+            menu_items = self._rpc_items(search_menu)
+            results.extend(self._extract_tidal_tracks(menu_items))
+
+            for category in self._preferred_tidal_search_categories(menu_items):
+                category_id = category.get("id")
+                if not category_id:
+                    continue
+
+                tracks = await self._tidal_items(
+                    player_id, item_id=str(category_id), limit=limit
+                )
+                category_results = self._extract_tidal_tracks(self._rpc_items(tracks))
+                if not category_results:
+                    tracks = await self._tidal_items(
+                        player_id,
+                        item_id=str(category_id),
+                        search=search_query,
+                        limit=limit,
+                    )
+                    category_results = self._extract_tidal_tracks(
+                        self._rpc_items(tracks)
+                    )
+
+                results.extend(category_results)
+                if category_results:
+                    break
+        except Exception as e:
+            _LOGGER.info("TIDAL search failed for %r: %s", search_query, e)
+
         return results
+
+    async def _tidal_items(
+        self,
+        player_id: str,
+        item_id: Optional[str] = None,
+        search: Optional[str] = None,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
+        params: List[str] = ["items", "0", str(limit)]
+        if item_id:
+            params.append(f"item_id:{item_id}")
+        if search:
+            params.append(f"search:{search}")
+        return await self.direct_rpc("tidal", params, player_id=player_id)
+
+    @staticmethod
+    def _rpc_items(result: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not isinstance(result, dict):
+            return []
+        items = result.get("loop_loop") or result.get("items") or []
+        return [item for item in items if isinstance(item, dict)]
+
+    @staticmethod
+    def _find_menu_item(
+        items: List[Dict[str, Any]],
+        names: Optional[set[str]] = None,
+        types: Optional[set[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        names = names or set()
+        types = types or set()
+        for item in items:
+            item_name = str(item.get("name") or item.get("title") or "").strip().lower()
+            item_type = str(item.get("type") or "").strip().lower()
+            if item_name in names or item_type in types:
+                return item
+        return None
+
+    @staticmethod
+    def _preferred_tidal_search_categories(
+        items: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        preferred = []
+        fallback = []
+        for item in items:
+            name = str(item.get("name") or item.get("title") or "").strip().lower()
+            if name in {"songs", "song", "tracks", "track"}:
+                preferred.append(item)
+            elif name == "everything":
+                fallback.append(item)
+        return preferred + fallback
+
+    @staticmethod
+    def _extract_tidal_tracks(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        results = []
+        for item in items:
+            url = item.get("url") or item.get("play") or item.get("favorites_url")
+            url = _normalize_media_url(str(url)) if url else None
+            if not _is_tidal_url(url):
+                continue
+
+            item_type = str(item.get("type") or "").strip().lower()
+            is_audio = bool(item.get("isaudio")) or item_type == "audio"
+            if not is_audio and not re.match(r"^(?:tidal|wimp)://\d+", url or ""):
+                continue
+
+            title = str(item.get("name") or item.get("title") or item.get("line1") or "")
+            artist = str(item.get("artist") or item.get("line2") or "")
+            if artist and artist not in title:
+                title = f"{title} - {artist}" if title else artist
+            results.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "source": "tidal",
+                }
+            )
+        return results
+
+    @staticmethod
+    def _dedupe_media_results(
+        results: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        deduped = []
+        seen = set()
+        for item in results:
+            key = item.get("url")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped
 
     async def _search_media(
         self, search_query: str, player: Player
     ) -> Optional[str]:
-        """Find the first playable URL for a search query (local then Spotify)."""
+        """Find the first playable URL for a search query."""
         results = await self.search_media(search_query)
         if not results:
             return None
@@ -394,11 +573,11 @@ class LMSClient:
 
         if action == "add":
             return await self.direct_rpc(
-                "playlist", ["add", _normalize_spotify_url(url)], player_id=player_id
+                "playlist", ["add", _normalize_media_url(url)], player_id=player_id
             )
         if action == "insert":
             return await self.direct_rpc(
-                "playlist", ["insert", _normalize_spotify_url(url)], player_id=player_id
+                "playlist", ["insert", _normalize_media_url(url)], player_id=player_id
             )
         if action == "delete":
             return await self.direct_rpc(

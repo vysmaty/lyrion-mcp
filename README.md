@@ -7,7 +7,7 @@ An [MCP](https://modelcontextprotocol.io/) server that lets LLMs control a
 
 - **9 MCP tools** (optimized for context efficiency — ~1,400 tokens of definition overhead)
 - Play by URL, track ID, search, collection ID, or Spotify Artist Radio
-- Search across local library + Spotify (via the Spotty plugin)
+- Search across local library + Spotify (via Spotty) + TIDAL
 - Full playback control: pause, stop, seek, power on/off
 - Playlist management: add, insert, delete, clear, move, jump, save
 - Player settings: volume, shuffle, repeat, mute
@@ -53,7 +53,7 @@ transport. Point your MCP client at that URL.
 |------|-------------|
 | `get_status` | System topology (all players) or now-playing (with player_id) |
 | `play_media` | Play by URL, track_id, search (defaults to Artist Radio), or collection ID |
-| `search_media` | Search local library + Spotify, return playable URLs |
+| `search_media` | Search local library + Spotify + TIDAL, return playable URLs |
 | `control_playback` | Pause, stop, play, seek, power on/off |
 | `manage_playlist` | Add, insert, delete, clear, move, jump, save |
 | `set_player` | Volume, shuffle, repeat, mute |
@@ -75,3 +75,4 @@ python -m pyflakes client.py main.py tests/
 - Python 3.12+
 - A running Lyrion Music Server (9.x)
 - [Spotty plugin](https://github.com/michaelherger/Spotty-Plugin) (optional, for Spotify)
+- [TIDAL plugin](https://github.com/michaelherger/lms-plugin-tidal) (optional, for TIDAL)

@@ -52,7 +52,7 @@ async def play_media(
     player_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Play media. Provide exactly one source:
-    - url: stream or spotify:track:... link
+    - url: stream, spotify:track:..., or tidal://.../tidal.com link
     - track_id: local library track by numeric ID
     - search_query: defaults to Spotify Artist Radio (~200 recommended
       tracks). This is the right choice for "play Foo Fighters" or any
@@ -91,7 +91,7 @@ async def play_media(
 
 @mcp.tool()
 async def search_media(search_query: str, limit: int = 5) -> Dict[str, Any]:
-    """Search local library and Spotify (Spotty). Returns playable tracks
+    """Search local library, Spotify (Spotty), and TIDAL. Returns playable tracks
     with title, url, and source. Use limit to cap results (default 5)."""
     try:
         results = await client.search_media(search_query)

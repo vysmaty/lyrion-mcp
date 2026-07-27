@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from client import LMSClient, _normalize_spotify_url
+from client import LMSClient, _normalize_spotify_url, _normalize_tidal_url
 
 
 def _mock_player(pid="p1", name="Player One"):
@@ -229,6 +229,32 @@ class TestPlayMedia(unittest.IsolatedAsyncioTestCase):
         self.assertIs(ok, True)
         player.async_load_url.assert_awaited_once_with("spotify://track:abc")
 
+    async def test_play_media_search_tidal_fallback(self):
+        # Local library and Spotty return nothing, but TIDAL returns a track.
+        player = _mock_player()
+        client = _make_client(players=[player])
+        client.lms_server.async_browse = AsyncMock(return_value={"items": []})
+        client.lms_server.async_query = AsyncMock(
+            side_effect=[
+                {"loop_loop": []},  # Spotty
+                {"loop_loop": [{"name": "Search", "type": "search", "id": "9"}]},
+                {"loop_loop": [{"name": "Songs", "type": "link", "id": "9.4"}]},
+                {
+                    "loop_loop": [
+                        {
+                            "name": "Sweet Thing",
+                            "line2": "Van Morrison",
+                            "url": "tidal://12345.flc",
+                            "type": "audio",
+                        }
+                    ]
+                },
+            ]
+        )
+        ok = await client.play_media(search_query="Sweet Thing")
+        self.assertIs(ok, True)
+        player.async_load_url.assert_awaited_once_with("tidal://12345.flc")
+
     async def test_play_media_search_no_results(self):
         player = _mock_player()
         client = _make_client(players=[player])
@@ -293,6 +319,61 @@ class TestSearchMedia(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[0]["source"], "library")
         self.assertEqual(results[1]["source"], "spotify")
         self.assertEqual(results[1]["url"], "spotify://track:abc")
+
+    async def test_search_returns_tidal(self):
+        player = _mock_player("p1", "Office")
+        client = _make_client(players=[player])
+        client.lms_server.async_browse = AsyncMock(return_value={"items": []})
+        client.lms_server.async_query = AsyncMock(
+            side_effect=[
+                {"loop_loop": []},  # Spotty
+                {"loop_loop": [{"name": "Search", "type": "search", "id": "9"}]},
+                {"loop_loop": [{"name": "Songs", "type": "link", "id": "9.4"}]},
+                {
+                    "loop_loop": [
+                        {
+                            "name": "The Stars Are Ours",
+                            "line2": "The Mayer Hawthorne",
+                            "url": "tidal://98765.flc",
+                            "type": "audio",
+                        }
+                    ]
+                },
+            ]
+        )
+        results = await client.search_media("The Stars Are Ours")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["source"], "tidal")
+        self.assertEqual(results[0]["url"], "tidal://98765.flc")
+        self.assertEqual(
+            results[0]["title"], "The Stars Are Ours - The Mayer Hawthorne"
+        )
+
+    async def test_search_tidal_dedupes_category_and_track_results(self):
+        player = _mock_player("p1", "Office")
+        client = _make_client(players=[player])
+        client.lms_server.async_browse = AsyncMock(return_value={"items": []})
+        tidal_track = {
+            "name": "Same",
+            "url": "tidal://111.flc",
+            "type": "audio",
+        }
+        client.lms_server.async_query = AsyncMock(
+            side_effect=[
+                {"loop_loop": []},  # Spotty
+                {"loop_loop": [{"name": "Search", "type": "search", "id": "9"}]},
+                {
+                    "loop_loop": [
+                        tidal_track,
+                        {"name": "Songs", "type": "link", "id": "9.4"},
+                    ]
+                },
+                {"loop_loop": [tidal_track]},
+            ]
+        )
+        results = await client.search_media("Same")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["url"], "tidal://111.flc")
 
     async def test_search_spotify_only(self):
         player = _mock_player("p1")
@@ -363,6 +444,24 @@ class TestNormalizeSpotifyUrl(unittest.TestCase):
     def test_http_stream_url_unchanged(self):
         url = "http://stream.example.com/live.mp3"
         self.assertEqual(_normalize_spotify_url(url), url)
+
+
+class TestNormalizeTidalUrl(unittest.TestCase):
+    def test_native_tidal_track_url_normalized(self):
+        self.assertEqual(_normalize_tidal_url("tidal://track:12345"), "tidal://12345")
+
+    def test_native_tidal_track_url_with_format_normalized(self):
+        self.assertEqual(
+            _normalize_tidal_url("tidal://track:12345.flc"), "tidal://12345"
+        )
+
+    def test_tidal_web_url_unchanged(self):
+        url = "https://tidal.com/browse/track/95570766"
+        self.assertEqual(_normalize_tidal_url(url), url)
+
+    def test_non_tidal_url_unchanged(self):
+        url = "spotify://track:abc"
+        self.assertEqual(_normalize_tidal_url(url), url)
 
 
 class TestPlaybackControls(unittest.IsolatedAsyncioTestCase):
@@ -543,6 +642,13 @@ class TestManagePlaylist(unittest.IsolatedAsyncioTestCase):
         client = _make_client(players=[_mock_player()])
         await client.manage_playlist("add", url="file:///x", player_id="p1")
         client.lms_server.async_query.assert_awaited()
+
+    async def test_add_normalizes_tidal_track_url(self):
+        client = _make_client(players=[_mock_player()])
+        await client.manage_playlist("add", url="tidal://track:12345", player_id="p1")
+        client.lms_server.async_query.assert_awaited_once_with(
+            "playlist", "add", "tidal://12345", player="p1"
+        )
 
     async def test_clear(self):
         client = _make_client(players=[_mock_player()])
