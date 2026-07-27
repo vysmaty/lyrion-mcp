@@ -7,7 +7,7 @@ An [MCP](https://modelcontextprotocol.io/) server that lets LLMs control a
 
 - **9 MCP tools** (optimized for context efficiency — ~1,400 tokens of definition overhead)
 - Play by URL, track ID, search, collection ID, or Spotify Artist Radio
-- Search across local library + Spotify (via the Spotty plugin)
+- Search across local library + Spotify (via Spotty) + TIDAL
 - Full playback control: pause, stop, seek, power on/off
 - Playlist management: add, insert, delete, clear, move, jump, save
 - Player settings: volume, shuffle, repeat, mute
@@ -47,13 +47,52 @@ docker run -d -p 8000:8000 -e LMS_HOST=your-lms-host lyrion-mcp
 The server runs on `http://localhost:8000` using the `streamable-http`
 transport. Point your MCP client at that URL.
 
+### Docker Compose
+
+```yaml
+services:
+  lyrion-mcp:
+    image: ghcr.io/vysmaty/lyrion-mcp:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      LMS_HOST: your-lms-host
+      LMS_PORT: "9000"
+      LMS_HTTPS: "0"
+      # LMS_USERNAME: your-username
+      # LMS_PASSWORD: your-password
+```
+
+For a local checkout, replace the `image` line with:
+
+```yaml
+    build: .
+```
+
+### GitHub Container Registry
+
+Publishing a GitHub release builds and pushes a multi-architecture image to
+GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/vysmaty/lyrion-mcp:latest
+docker run -d -p 8000:8000 -e LMS_HOST=your-lms-host ghcr.io/vysmaty/lyrion-mcp:latest
+```
+
+Release images are tagged as `latest`, the release version (for example
+`v1.0.0`), the major/minor version, and the commit SHA. The workflow can also
+be started manually from GitHub Actions, where it publishes an `edge` image and
+an optional custom tag. The workflow must be present on the repository's
+default branch before GitHub can run it for new releases.
+
 ## Tools
 
 | Tool | Description |
 |------|-------------|
 | `get_status` | System topology (all players) or now-playing (with player_id) |
 | `play_media` | Play by URL, track_id, search (defaults to Artist Radio), or collection ID |
-| `search_media` | Search local library + Spotify, return playable URLs |
+| `search_media` | Search local library + Spotify + TIDAL, return playable URLs |
 | `control_playback` | Pause, stop, play, seek, power on/off |
 | `manage_playlist` | Add, insert, delete, clear, move, jump, save |
 | `set_player` | Volume, shuffle, repeat, mute |
@@ -75,3 +114,4 @@ python -m pyflakes client.py main.py tests/
 - Python 3.12+
 - A running Lyrion Music Server (9.x)
 - [Spotty plugin](https://github.com/michaelherger/Spotty-Plugin) (optional, for Spotify)
+- [TIDAL plugin](https://github.com/michaelherger/lms-plugin-tidal) (optional, for TIDAL)
