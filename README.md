@@ -47,6 +47,22 @@ docker run -d -p 8000:8000 -e LMS_HOST=your-lms-host lyrion-mcp
 The server runs on `http://localhost:8000` using the `streamable-http`
 transport. Point your MCP client at that URL.
 
+### GitHub Container Registry
+
+Publishing a GitHub release builds and pushes a multi-architecture image to
+GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/vysmaty/lyrion-mcp:latest
+docker run -d -p 8000:8000 -e LMS_HOST=your-lms-host ghcr.io/vysmaty/lyrion-mcp:latest
+```
+
+Release images are tagged as `latest`, the release version (for example
+`v1.0.0`), the major/minor version, and the commit SHA. The workflow can also
+be started manually from GitHub Actions, where it publishes an `edge` image and
+an optional custom tag. The workflow must be present on the repository's
+default branch before GitHub can run it for new releases.
+
 ## Tools
 
 | Tool | Description |
