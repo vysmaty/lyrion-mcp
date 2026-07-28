@@ -6,8 +6,8 @@ An [MCP](https://modelcontextprotocol.io/) server that lets LLMs control a
 ## Features
 
 - **9 MCP tools** (optimized for context efficiency — ~1,400 tokens of definition overhead)
-- Play by URL, track ID, search, collection ID, or Spotify Artist Radio
-- Search across local library + Spotify (via Spotty) + TIDAL
+- Play by URL, track ID, search, collection ID, TIDAL app reference, or Spotify Artist Radio
+- Search across local library + Spotify (via Spotty) + TIDAL tracks/albums/artists
 - Full playback control: pause, stop, seek, power on/off
 - Playlist management: add, insert, delete, clear, move, jump, save
 - Player settings: volume, shuffle, repeat, mute
@@ -91,13 +91,13 @@ default branch before GitHub can run it for new releases.
 | Tool | Description |
 |------|-------------|
 | `get_status` | System topology (all players) or now-playing (with player_id) |
-| `play_media` | Play by URL, track_id, search (defaults to Artist Radio), or collection ID |
-| `search_media` | Search local library + Spotify + TIDAL, return playable URLs |
+| `play_media` | Play by URL, track_id, search (defaults to Artist Radio), collection ID, or TIDAL app reference |
+| `search_media` | Search local library + Spotify + TIDAL, return playable tracks/albums/artists |
 | `control_playback` | Pause, stop, play, seek, power on/off |
 | `manage_playlist` | Add, insert, delete, clear, move, jump, save |
 | `set_player` | Volume, shuffle, repeat, mute |
 | `sync_players` | Sync or unsync players |
-| `browse_library` | Browse genres/artists/albums/titles/years/playlists |
+| `browse_library` | Browse genres/artists/albums/titles/years/playlists; searched artists/albums include TIDAL matches |
 | `query_lms` | Raw LMS CLI passthrough |
 
 ## Development

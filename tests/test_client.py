@@ -255,6 +255,16 @@ class TestPlayMedia(unittest.IsolatedAsyncioTestCase):
         self.assertIs(ok, True)
         player.async_load_url.assert_awaited_once_with("tidal://12345.flc")
 
+    async def test_play_media_tidal_item_reference(self):
+        player = _mock_player("p1")
+        client = _make_client(players=[player])
+        ok = await client.play_media(url="lms://tidal/7_Radosta.3.0", player_id="p1")
+        self.assertIs(ok, True)
+        client.lms_server.async_query.assert_awaited_once_with(
+            "tidal", "playlist", "play", "item_id:7_Radosta.3.0", player="p1"
+        )
+        player.async_load_url.assert_not_called()
+
     async def test_play_media_search_no_results(self):
         player = _mock_player()
         client = _make_client(players=[player])
@@ -348,6 +358,48 @@ class TestSearchMedia(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             results[0]["title"], "The Stars Are Ours - The Mayer Hawthorne"
         )
+
+    async def test_search_returns_tidal_albums_and_artists(self):
+        player = _mock_player("p1", "Office")
+        client = _make_client(players=[player])
+        client.lms_server.async_browse = AsyncMock(return_value={"items": []})
+        client.lms_server.async_query = AsyncMock(
+            side_effect=[
+                {"loop_loop": []},  # Spotty
+                {"loop_loop": [{"name": "Vyhledat", "type": "search", "id": "7"}]},
+                {
+                    "loop_loop": [
+                        {"name": "Interpreti", "id": "7_Radosta.2"},
+                        {"name": "Alba", "id": "7_Radosta.3"},
+                        {"name": "Skladby", "id": "7_Radosta.4"},
+                    ]
+                },
+                {
+                    "loop_loop": [
+                        {"name": "Radosta", "type": "outline", "id": "7_Radosta.2.0"}
+                    ]
+                },
+                {
+                    "loop_loop": [
+                        {"name": "Dvanáctisměna", "type": "playlist", "id": "7_Radosta.3.0"}
+                    ]
+                },
+                {
+                    "loop_loop": [
+                        {"name": "Máňa", "url": "tidal://291647717.flc", "type": "audio"}
+                    ]
+                },
+            ]
+        )
+        results = await client.search_media("Radosta")
+        self.assertEqual(results[0]["source"], "tidal")
+        self.assertEqual(results[0]["media_type"], "artist")
+        self.assertEqual(results[0]["title"], "Radosta")
+        self.assertEqual(results[0]["url"], "lms://tidal/7_Radosta.2.0")
+        self.assertEqual(results[1]["media_type"], "album")
+        self.assertEqual(results[1]["title"], "Dvanáctisměna")
+        self.assertEqual(results[1]["url"], "lms://tidal/7_Radosta.3.0")
+        self.assertEqual(results[2]["media_type"], "track")
 
     async def test_search_tidal_dedupes_category_and_track_results(self):
         player = _mock_player("p1", "Office")
@@ -523,6 +575,7 @@ class TestDirectRpc(unittest.IsolatedAsyncioTestCase):
     async def test_direct_rpc_none_response(self):
         client = _make_client(players=[_mock_player()])
         client.lms_server.async_query = AsyncMock(return_value=None)
+        client.session.post.side_effect = RuntimeError("raw fallback unavailable")
         result = await client.direct_rpc("bogus")
         self.assertIn("error", result)
         self.assertFalse(result.get("success", True))
@@ -650,6 +703,13 @@ class TestManagePlaylist(unittest.IsolatedAsyncioTestCase):
             "playlist", "add", "tidal://12345", player="p1"
         )
 
+    async def test_add_tidal_item_reference(self):
+        client = _make_client(players=[_mock_player()])
+        await client.manage_playlist("add", url="lms://tidal/7_Radosta.3.0", player_id="p1")
+        client.lms_server.async_query.assert_awaited_once_with(
+            "tidal", "playlist", "add", "item_id:7_Radosta.3.0", player="p1"
+        )
+
     async def test_clear(self):
         client = _make_client(players=[_mock_player()])
         await client.manage_playlist("clear", player_id="p1")
@@ -690,6 +750,36 @@ class TestBrowseLibrary(unittest.IsolatedAsyncioTestCase):
         )
         items = await client.browse_library("albums", limit=5)
         self.assertEqual(len(items), 1)
+
+    async def test_browse_artists_includes_tidal_search_results(self):
+        player = _mock_player("p1")
+        client = _make_client(players=[player])
+        client.lms_server.async_browse = AsyncMock(return_value={"items": []})
+        client.lms_server.async_query = AsyncMock(
+            side_effect=[
+                {"loop_loop": [{"name": "Vyhledat", "type": "search", "id": "7"}]},
+                {
+                    "loop_loop": [
+                        {"name": "Interpreti", "id": "7_Radosta.2"},
+                    ]
+                },
+                {
+                    "loop_loop": [
+                        {"name": "Radosta", "type": "outline", "id": "7_Radosta.2.0"}
+                    ]
+                },
+            ]
+        )
+        items = await client.browse_library("artists", limit=5, search="Radosta")
+        self.assertEqual(items, [
+            {
+                "id": "lms://tidal/7_Radosta.2.0",
+                "title": "Radosta",
+                "source": "tidal",
+                "media_type": "artist",
+                "url": "lms://tidal/7_Radosta.2.0",
+            }
+        ])
 
     async def test_browse_bad_category(self):
         client = _make_client(players=[_mock_player()])
