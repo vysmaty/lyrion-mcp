@@ -314,63 +314,101 @@ class LMSClient:
             _LOGGER.error("Error in play_radio: %s", e)
             return False
 
-    async def search_media(self, search_query: str) -> List[Dict[str, Any]]:
+    async def search_media(
+        self, search_query: str, media_type: str = "any"
+    ) -> List[Dict[str, Any]]:
         """
         Search the local LMS library plus supported online music apps for
-        playable tracks matching ``search_query``.
+        playable media matching ``search_query``.
 
-        Returns a list of dicts with keys: title, url, source ('library' or
-        'spotify' or 'tidal'). Local library results are listed first.
+        ``media_type`` is one of: any, track, album, artist. Local library
+        results are listed first within the requested type.
         """
+        valid_media_types = {"any", "track", "album", "artist"}
+        if media_type not in valid_media_types:
+            raise ValueError(f"media_type must be one of {sorted(valid_media_types)}")
+
         await self.ensure_connected()
         results: List[Dict[str, Any]] = []
         assert self.lms_server is not None
 
         # 1) Local library search
-        browse = await self.lms_server.async_browse(
-            "titles", limit=10, search_query=search_query
-        )
-        for item in (browse or {}).get("items") or []:
-            url = item.get("url")
-            if url:
+        if media_type in {"any", "track"}:
+            browse = await self.lms_server.async_browse(
+                "titles", limit=10, search_query=search_query
+            )
+            for item in (browse or {}).get("items") or []:
+                url = item.get("url")
+                if url:
+                    results.append(
+                        {
+                            "title": item.get("title", ""),
+                            "url": url,
+                            "source": "library",
+                            "media_type": "track",
+                        }
+                    )
+
+        if media_type in {"album", "artist"}:
+            category = "albums" if media_type == "album" else "artists"
+            browse = await self.lms_server.async_browse(
+                category, limit=10, search_query=search_query
+            )
+            for item in (browse or {}).get("items") or []:
                 results.append(
                     {
                         "title": item.get("title", ""),
-                        "url": url,
+                        "id": item.get("id"),
                         "source": "library",
-                        "media_type": "track",
+                        "media_type": media_type,
                     }
                 )
 
         # 2) Spotty/TIDAL app search — requires a player context
         player_id = await self._first_player_id()
         if player_id:
-            spotty = await self.direct_rpc(
-                "spotty",
-                ["items", "0", "20", "item_id:1.0", f"search:{search_query}", "want_url:1"],
-                player_id=player_id,
-            )
-            for item in (spotty or {}).get("loop_loop") or []:
-                # Skip non-audio category links (Artists, Albums, Playlists, etc.)
-                if not item.get("isaudio"):
-                    continue
-                url = item.get("url")
-                if url:
-                    results.append(
-                        {
-                            "title": item.get("name", ""),
-                            "url": url,
-                            "source": "spotify",
-                            "media_type": "track",
-                        }
-                    )
+            if media_type in {"any", "track"}:
+                spotty = await self.direct_rpc(
+                    "spotty",
+                    [
+                        "items",
+                        "0",
+                        "20",
+                        "item_id:1.0",
+                        f"search:{search_query}",
+                        "want_url:1",
+                    ],
+                    player_id=player_id,
+                )
+                for item in (spotty or {}).get("loop_loop") or []:
+                    # Skip non-audio category links (Artists, Albums, Playlists, etc.)
+                    if not item.get("isaudio"):
+                        continue
+                    url = item.get("url")
+                    if url:
+                        results.append(
+                            {
+                                "title": item.get("name", ""),
+                                "url": url,
+                                "source": "spotify",
+                                "media_type": "track",
+                            }
+                        )
 
-            results.extend(await self._search_tidal_media(search_query, player_id))
+            results.extend(
+                await self._search_tidal_media(
+                    search_query, player_id, media_type=media_type
+                )
+            )
 
         return self._dedupe_media_results(results)
 
     async def _search_tidal_media(
-        self, search_query: str, player_id: str, limit: int = 20
+        self,
+        search_query: str,
+        player_id: str,
+        limit: int = 20,
+        media_type: str = "any",
     ) -> List[Dict[str, Any]]:
         """
         Search the LMS TIDAL app menu for playable tracks.
@@ -398,34 +436,39 @@ class LMSClient:
             )
             menu_items = self._rpc_items(search_menu)
 
-            for category in self._tidal_search_categories(menu_items, "artist"):
-                category_id = category.get("id")
-                if not category_id:
-                    continue
-                artists = await self._tidal_items(
-                    player_id, item_id=str(category_id), limit=limit
-                )
-                results.extend(
-                    self._extract_tidal_collections(
-                        self._rpc_items(artists), media_type="artist"
+            if media_type in {"any", "artist"}:
+                for category in self._tidal_search_categories(menu_items, "artist"):
+                    category_id = category.get("id")
+                    if not category_id:
+                        continue
+                    artists = await self._tidal_items(
+                        player_id, item_id=str(category_id), limit=limit
                     )
-                )
-                if results:
+                    results.extend(
+                        self._extract_tidal_collections(
+                            self._rpc_items(artists), media_type="artist"
+                        )
+                    )
+                    if results:
+                        break
+
+            if media_type in {"any", "album"}:
+                for category in self._tidal_search_categories(menu_items, "album"):
+                    category_id = category.get("id")
+                    if not category_id:
+                        continue
+                    albums = await self._tidal_items(
+                        player_id, item_id=str(category_id), limit=limit
+                    )
+                    results.extend(
+                        self._extract_tidal_collections(
+                            self._rpc_items(albums), media_type="album"
+                        )
+                    )
                     break
 
-            for category in self._tidal_search_categories(menu_items, "album"):
-                category_id = category.get("id")
-                if not category_id:
-                    continue
-                albums = await self._tidal_items(
-                    player_id, item_id=str(category_id), limit=limit
-                )
-                results.extend(
-                    self._extract_tidal_collections(
-                        self._rpc_items(albums), media_type="album"
-                    )
-                )
-                break
+            if media_type not in {"any", "track"}:
+                return results
 
             track_results = self._extract_tidal_tracks(menu_items)
             for category in self._tidal_search_categories(menu_items, "track"):
@@ -570,7 +613,12 @@ class LMSClient:
         deduped = []
         seen = set()
         for item in results:
-            key = item.get("url")
+            key = item.get("url") or (
+                item.get("source"),
+                item.get("media_type"),
+                item.get("id"),
+                item.get("title"),
+            )
             if not key or key in seen:
                 continue
             seen.add(key)
@@ -581,7 +629,7 @@ class LMSClient:
         self, search_query: str, player: Player
     ) -> Optional[str]:
         """Find the first playable URL for a search query."""
-        results = await self.search_media(search_query)
+        results = await self.search_media(search_query, media_type="track")
         if not results:
             return None
         first = results[0]

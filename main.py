@@ -92,16 +92,56 @@ async def play_media(
 
 
 @mcp.tool()
-async def search_media(search_query: str, limit: int = 5) -> Dict[str, Any]:
-    """Search local library, Spotify (Spotty), and TIDAL. Returns playable media
-    with title, url, source, and media_type (track/album/artist). Use limit to
-    cap results (default 5)."""
+async def search_media(
+    search_query: str,
+    limit: int = 5,
+    media_type: Literal["any", "track", "album", "artist"] = "any",
+) -> Dict[str, Any]:
+    """Search local library, Spotify (Spotty), and TIDAL. Use media_type to
+    avoid mixing intent: track for songs, album for full albums, artist for
+    bands/performers, any for exploratory browsing. Returns title, url/id,
+    source, and media_type. Use limit to cap results (default 5)."""
     try:
-        results = await client.search_media(search_query)
+        results = await client.search_media(search_query, media_type=media_type)
         return {"results": results[:limit], "count": len(results)}
     except Exception as e:
         _LOGGER.exception("search_media failed")
         return {"results": [], "count": 0, "error": str(e)}
+
+
+async def _search_media_by_type(
+    search_query: str,
+    media_type: Literal["track", "album", "artist"],
+    limit: int,
+) -> Dict[str, Any]:
+    try:
+        results = await client.search_media(search_query, media_type=media_type)
+        return {"results": results[:limit], "count": len(results)}
+    except Exception as e:
+        _LOGGER.exception("search_%ss failed", media_type)
+        return {"results": [], "count": 0, "error": str(e)}
+
+
+@mcp.tool()
+async def search_tracks(search_query: str, limit: int = 5) -> Dict[str, Any]:
+    """Search only playable tracks/songs. Use this for requests naming a song,
+    track, or when adding individual songs to a playlist; it will not return
+    albums or artists."""
+    return await _search_media_by_type(search_query, "track", limit)
+
+
+@mcp.tool()
+async def search_albums(search_query: str, limit: int = 5) -> Dict[str, Any]:
+    """Search only albums. Use this for requests like playing or queueing a
+    full album; TIDAL albums return lms://tidal/... references."""
+    return await _search_media_by_type(search_query, "album", limit)
+
+
+@mcp.tool()
+async def search_artists(search_query: str, limit: int = 5) -> Dict[str, Any]:
+    """Search only artists/bands/performers. Use this for requests like playing
+    a group or artist; TIDAL artists return lms://tidal/... references."""
+    return await _search_media_by_type(search_query, "artist", limit)
 
 
 @mcp.tool()

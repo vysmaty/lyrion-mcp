@@ -401,6 +401,96 @@ class TestSearchMedia(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[1]["url"], "lms://tidal/7_Radosta.3.0")
         self.assertEqual(results[2]["media_type"], "track")
 
+    async def test_search_track_filter_excludes_tidal_albums_and_artists(self):
+        player = _mock_player("p1", "Office")
+        client = _make_client(players=[player])
+        client.lms_server.async_browse = AsyncMock(return_value={"items": []})
+        client.lms_server.async_query = AsyncMock(
+            side_effect=[
+                {"loop_loop": []},  # Spotty
+                {"loop_loop": [{"name": "Vyhledat", "type": "search", "id": "7"}]},
+                {
+                    "loop_loop": [
+                        {"name": "Interpreti", "id": "7_Radosta.2"},
+                        {"name": "Alba", "id": "7_Radosta.3"},
+                        {"name": "Skladby", "id": "7_Radosta.4"},
+                    ]
+                },
+                {
+                    "loop_loop": [
+                        {
+                            "name": "Máňa",
+                            "url": "tidal://291647717.flc",
+                            "type": "audio",
+                        }
+                    ]
+                },
+            ]
+        )
+        results = await client.search_media("Radosta", media_type="track")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["media_type"], "track")
+        self.assertEqual(results[0]["title"], "Máňa")
+
+    async def test_search_album_filter_returns_local_and_tidal_albums(self):
+        player = _mock_player("p1", "Office")
+        client = _make_client(players=[player])
+        client.lms_server.async_browse = AsyncMock(
+            return_value={"items": [{"id": 22, "title": "Local Album"}]}
+        )
+        client.lms_server.async_query = AsyncMock(
+            side_effect=[
+                {"loop_loop": [{"name": "Vyhledat", "type": "search", "id": "7"}]},
+                {"loop_loop": [{"name": "Alba", "id": "7_Radosta.3"}]},
+                {
+                    "loop_loop": [
+                        {
+                            "name": "Dvanáctisměna",
+                            "type": "playlist",
+                            "id": "7_Radosta.3.0",
+                        }
+                    ]
+                },
+            ]
+        )
+        results = await client.search_media("Radosta", media_type="album")
+        self.assertEqual(results[0]["source"], "library")
+        self.assertEqual(results[0]["media_type"], "album")
+        self.assertEqual(results[0]["id"], 22)
+        self.assertEqual(results[1]["source"], "tidal")
+        self.assertEqual(results[1]["media_type"], "album")
+        self.assertEqual(results[1]["url"], "lms://tidal/7_Radosta.3.0")
+
+    async def test_search_artist_filter_returns_local_and_tidal_artists(self):
+        player = _mock_player("p1", "Office")
+        client = _make_client(players=[player])
+        client.lms_server.async_browse = AsyncMock(
+            return_value={"items": [{"id": 5, "title": "Local Artist"}]}
+        )
+        client.lms_server.async_query = AsyncMock(
+            side_effect=[
+                {"loop_loop": [{"name": "Vyhledat", "type": "search", "id": "7"}]},
+                {"loop_loop": [{"name": "Interpreti", "id": "7_Radosta.2"}]},
+                {
+                    "loop_loop": [
+                        {"name": "Radosta", "type": "outline", "id": "7_Radosta.2.0"}
+                    ]
+                },
+            ]
+        )
+        results = await client.search_media("Radosta", media_type="artist")
+        self.assertEqual(results[0]["source"], "library")
+        self.assertEqual(results[0]["media_type"], "artist")
+        self.assertEqual(results[0]["id"], 5)
+        self.assertEqual(results[1]["source"], "tidal")
+        self.assertEqual(results[1]["media_type"], "artist")
+        self.assertEqual(results[1]["url"], "lms://tidal/7_Radosta.2.0")
+
+    async def test_search_bad_media_type_raises(self):
+        client = _make_client(players=[_mock_player()])
+        with self.assertRaises(ValueError):
+            await client.search_media("Radosta", media_type="playlist")
+
     async def test_search_tidal_dedupes_category_and_track_results(self):
         player = _mock_player("p1", "Office")
         client = _make_client(players=[player])
