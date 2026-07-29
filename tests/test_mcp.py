@@ -8,7 +8,10 @@ from main import (
     manage_playlist,
     play_media,
     query_lms,
+    search_albums,
+    search_artists,
     search_media,
+    search_tracks,
     set_player,
     sync_players,
 )
@@ -19,6 +22,9 @@ EXPECTED_TOOLS = [
     "get_status",
     "play_media",
     "search_media",
+    "search_tracks",
+    "search_albums",
+    "search_artists",
     "control_playback",
     "manage_playlist",
     "set_player",
@@ -129,6 +135,16 @@ class TestMCPToolBehavior(unittest.IsolatedAsyncioTestCase):
         result = await search_media("test")
         self.assertEqual(result["count"], 1)
         self.assertEqual(len(result["results"]), 1)
+        self.mock_client.search_media.assert_awaited_once_with(
+            "test", media_type="any"
+        )
+
+    async def test_search_media_type_filter(self):
+        result = await search_media("test", media_type="track")
+        self.assertEqual(result["count"], 1)
+        self.mock_client.search_media.assert_awaited_once_with(
+            "test", media_type="track"
+        )
 
     async def test_search_media_limit(self):
         self.mock_client.search_media = AsyncMock(
@@ -136,6 +152,27 @@ class TestMCPToolBehavior(unittest.IsolatedAsyncioTestCase):
         )
         result = await search_media("test", limit=3)
         self.assertEqual(len(result["results"]), 3)
+
+    async def test_search_tracks(self):
+        result = await search_tracks("song", limit=2)
+        self.assertEqual(result["count"], 1)
+        self.mock_client.search_media.assert_awaited_once_with(
+            "song", media_type="track"
+        )
+
+    async def test_search_albums(self):
+        result = await search_albums("album", limit=2)
+        self.assertEqual(result["count"], 1)
+        self.mock_client.search_media.assert_awaited_once_with(
+            "album", media_type="album"
+        )
+
+    async def test_search_artists(self):
+        result = await search_artists("artist", limit=2)
+        self.assertEqual(result["count"], 1)
+        self.mock_client.search_media.assert_awaited_once_with(
+            "artist", media_type="artist"
+        )
 
     # control_playback
     async def test_control_pause(self):

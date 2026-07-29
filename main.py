@@ -52,13 +52,15 @@ async def play_media(
     player_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Play media. Provide exactly one source:
-    - url: stream, spotify:track:..., or tidal://.../tidal.com link
+    - url: stream, spotify:track:..., tidal://.../tidal.com link, or
+      lms://tidal/... reference returned by search/browse for TIDAL albums/artists
     - track_id: local library track by numeric ID
     - search_query: defaults to Spotify Artist Radio (~200 recommended
       tracks). This is the right choice for "play Foo Fighters" or any
       artist request. Pass radio=false ONLY if the user names a specific
       song, e.g. "play Everlong by Foo Fighters" (plays one track then stops).
-    - album_id/artist_id/genre_id/playlist_id: play a collection by ID.
+    - album_id/artist_id/genre_id/playlist_id: play a local collection by ID,
+      or a lms://tidal/... reference returned for TIDAL albums/artists.
     player_id targets a specific player (default: first)."""
     try:
         # Radio is the default for search_query — playing one track and
@@ -90,15 +92,56 @@ async def play_media(
 
 
 @mcp.tool()
-async def search_media(search_query: str, limit: int = 5) -> Dict[str, Any]:
-    """Search local library, Spotify (Spotty), and TIDAL. Returns playable tracks
-    with title, url, and source. Use limit to cap results (default 5)."""
+async def search_media(
+    search_query: str,
+    limit: int = 5,
+    media_type: Literal["any", "track", "album", "artist"] = "any",
+) -> Dict[str, Any]:
+    """Search local library, Spotify (Spotty), and TIDAL. Use media_type to
+    avoid mixing intent: track for songs, album for full albums, artist for
+    bands/performers, any for exploratory browsing. Returns title, url/id,
+    source, and media_type. Use limit to cap results (default 5)."""
     try:
-        results = await client.search_media(search_query)
+        results = await client.search_media(search_query, media_type=media_type)
         return {"results": results[:limit], "count": len(results)}
     except Exception as e:
         _LOGGER.exception("search_media failed")
         return {"results": [], "count": 0, "error": str(e)}
+
+
+async def _search_media_by_type(
+    search_query: str,
+    media_type: Literal["track", "album", "artist"],
+    limit: int,
+) -> Dict[str, Any]:
+    try:
+        results = await client.search_media(search_query, media_type=media_type)
+        return {"results": results[:limit], "count": len(results)}
+    except Exception as e:
+        _LOGGER.exception("search_%ss failed", media_type)
+        return {"results": [], "count": 0, "error": str(e)}
+
+
+@mcp.tool()
+async def search_tracks(search_query: str, limit: int = 5) -> Dict[str, Any]:
+    """Search only playable tracks/songs. Use this for requests naming a song,
+    track, or when adding individual songs to a playlist; it will not return
+    albums or artists."""
+    return await _search_media_by_type(search_query, "track", limit)
+
+
+@mcp.tool()
+async def search_albums(search_query: str, limit: int = 5) -> Dict[str, Any]:
+    """Search only albums. Use this for requests like playing or queueing a
+    full album; TIDAL albums return lms://tidal/... references."""
+    return await _search_media_by_type(search_query, "album", limit)
+
+
+@mcp.tool()
+async def search_artists(search_query: str, limit: int = 5) -> Dict[str, Any]:
+    """Search only artists/bands/performers. Use this for requests like playing
+    a group or artist; TIDAL artists return lms://tidal/... references."""
+    return await _search_media_by_type(search_query, "artist", limit)
 
 
 @mcp.tool()
@@ -214,8 +257,9 @@ async def browse_library(
     limit: int = 20,
     search: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Browse local library. Returns items with id and title (and url where
-    applicable). Use search to filter."""
+    """Browse library categories. Returns items with id and title (and url where
+    applicable). With search for artists/albums, also includes TIDAL matches
+    when available."""
     try:
         items = await client.browse_library(category=category, limit=limit, search=search)
         return {"items": items, "count": len(items)}

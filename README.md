@@ -5,9 +5,9 @@ An [MCP](https://modelcontextprotocol.io/) server that lets LLMs control a
 
 ## Features
 
-- **9 MCP tools** (optimized for context efficiency — ~1,400 tokens of definition overhead)
-- Play by URL, track ID, search, collection ID, or Spotify Artist Radio
-- Search across local library + Spotify (via Spotty) + TIDAL
+- **12 MCP tools** with explicit search tools for tracks, albums, and artists
+- Play by URL, track ID, search, collection ID, TIDAL app reference, or Spotify Artist Radio
+- Search across local library + Spotify (via Spotty) + TIDAL with explicit track/album/artist filters
 - Full playback control: pause, stop, seek, power on/off
 - Playlist management: add, insert, delete, clear, move, jump, save
 - Player settings: volume, shuffle, repeat, mute
@@ -91,13 +91,16 @@ default branch before GitHub can run it for new releases.
 | Tool | Description |
 |------|-------------|
 | `get_status` | System topology (all players) or now-playing (with player_id) |
-| `play_media` | Play by URL, track_id, search (defaults to Artist Radio), or collection ID |
-| `search_media` | Search local library + Spotify + TIDAL, return playable URLs |
+| `play_media` | Play by URL, track_id, search (defaults to Artist Radio), collection ID, or TIDAL app reference |
+| `search_media` | Search local library + Spotify + TIDAL with `media_type` filter (`any`, `track`, `album`, `artist`) |
+| `search_tracks` | Search only playable tracks/songs; use before adding individual songs to a playlist |
+| `search_albums` | Search only albums; TIDAL albums return playable `lms://tidal/...` references |
+| `search_artists` | Search only artists/bands; TIDAL artists return playable `lms://tidal/...` references |
 | `control_playback` | Pause, stop, play, seek, power on/off |
 | `manage_playlist` | Add, insert, delete, clear, move, jump, save |
 | `set_player` | Volume, shuffle, repeat, mute |
 | `sync_players` | Sync or unsync players |
-| `browse_library` | Browse genres/artists/albums/titles/years/playlists |
+| `browse_library` | Browse genres/artists/albums/titles/years/playlists; searched artists/albums include TIDAL matches |
 | `query_lms` | Raw LMS CLI passthrough |
 
 ## Development
